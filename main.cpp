@@ -1,26 +1,127 @@
+#include <cstring>
+#include <iostream>
 #include <ncurses.h>
-#include <string.h>
 #include <unistd.h>
+
+using namespace std;
 
 #define SIDEBAR_WIDTH 30
 #define SIDEBAR_HEIGHT LINES - 1
 
+#define MAP_WIDTH 79
+#define MAP_HEIGHT 29
+
 int startx = 0;
 int starty = 0;
 
-char *choices[] = {
+string choices[7] = {
     "Inventory",  "Stats/Attributes", "Beastiary", "Diety",
     "Your Story", "Quest Book",       "Exit",
 
 };
 
-char *choices_right[] = {"Fight", "Defend", "Magic", "Quick-Potion 1",
-                         "Quick-Potion 2"};
+string choices_right[5] = {"Fight", "Defend", "Magic", "Quick-Potion 1",
+                           "Quick-Potion 2"};
 
-int n_choices = sizeof(choices) / sizeof(char *);
-int n_choices_right = sizeof(choices_right) / sizeof(char *);
+int posX = 40;
+int posY = 15;
+
+int n_choices = 7;
+int n_choices_right = 5;
 void print_menu(WINDOW *menu_win, int highlight);
 void print_right_menu(WINDOW *menu_win, int highlight);
+
+WINDOW *gamespace;
+
+class Floor {
+public:
+  WINDOW *gameWindow;
+  int gameWindowLength;
+  int gameWindowHeight;
+  int floorNum;
+  char gameMatrix[MAP_HEIGHT][MAP_WIDTH];
+  /*
+   * TODO: RENDER MAP METHOD
+   * TODO: INIT METHOD
+   * TODO: MODIFY MAP METHODS
+   * TODO: GENERATE MAP METHOD
+   * TODO:
+   */
+
+  void renderMap() {
+    int y, x;
+    for (y = 1; y < 29; y++) {
+      for (x = 1; x < 79; x++) {
+        mvwaddch(gamespace, y, x, gameMatrix[y][x]);
+        /* mvwaddch(gameWindow, y, x, gameMatrix[y][x]); */
+        wrefresh(gamespace);
+      }
+    }
+  }
+  void generateMap() {
+    int y, x;
+    for (y = 1; y < MAP_HEIGHT; y++) {
+      for (x = 1; x < MAP_WIDTH; x++) {
+        if ((y == 1 || y == MAP_HEIGHT - 1) || (x == 1 || x == MAP_WIDTH - 1)) {
+          gameMatrix[y][x] = '#';
+        } else {
+          gameMatrix[y][x] = '.';
+        }
+      }
+    }
+  }
+
+  Floor(WINDOW *gameW, int gameWL, int gameWH, int floorN) {
+
+    gameWindow = gameW;
+    gameWindowLength = gameWL;
+    gameWindowHeight = gameWH;
+    floorNum = floorN;
+    generateMap();
+  }
+};
+
+class Entity {
+public:
+  string name;
+  int constitution;
+  int dexterity;
+  int strength;
+  int intelligence;
+  int wisdom;
+  int perception;
+  int level;
+  int healthMax;
+  int health;
+
+  int maxHealth() { return constitution * 1 + (strength / 2); }
+  void takeDamage(int dmgAmount) {
+    health -= dmgAmount;
+    if (health <= -1) {
+      handleDeath();
+    }
+  }
+  void handleDeath() {
+    /*
+     * TODO: add death
+     */
+  }
+
+  Entity(string myName, int con, int dex, int str, int intel, int wis, int per,
+         int lvl, int startingX, int startingY) {
+    name = myName;
+    constitution = con;
+    dexterity = dex;
+    strength = str;
+    intelligence = intel;
+    wisdom = wis;
+    perception = per;
+    level = lvl;
+    healthMax = maxHealth();
+    health = healthMax;
+  }
+};
+
 WINDOW *create_newwin(int height, int width, int starty, int startx) {
   WINDOW *local_win;
 
@@ -91,12 +192,13 @@ int main() {
   noecho();
   cbreak(); /* Line buffering disabled. pass on everything */
   keypad(stdscr, TRUE);
+  curs_set(0);
 
   WINDOW *sidebar = newwin(SIDEBAR_HEIGHT, SIDEBAR_WIDTH, starty, startx);
   refresh();
   print_menu(sidebar, -1);
 
-  WINDOW *gamespace = create_newwin(30, 80, (LINES - 30) / 2, (COLS - 80) / 2);
+  gamespace = create_newwin(30, 80, (LINES - 30) / 2, (COLS - 80) / 2);
   WINDOW *title = create_newwin(5, 80, 0, (COLS - 80) / 2);
   char titletext[] = "SILLYSELENE PRESENTS: ETHICAL";
   mvwprintw(title, 2, centerText(80, titletext), titletext);
@@ -116,9 +218,50 @@ int main() {
   refresh();
   print_right_menu(right_sidebar, -1);
 
-  int ch;
+  Floor floor1(gamespace, 30, 80, 0);
+  floor1.generateMap();
+  floor1.renderMap();
+  wrefresh(gamespace);
 
-  sleep(10);
+  int continueGame = 1;
+
+  keypad(gamespace, TRUE);
+
+  while (continueGame == 1) {
+    int ch = wgetch(gamespace);
+    floor1.renderMap();
+    switch (ch) {
+    case KEY_BACKSPACE:
+      continueGame = 0;
+      break;
+    case KEY_LEFT:
+      if (floor1.gameMatrix[posY][posX - 1] == '.') {
+        posX -= 1;
+      }
+      break;
+    case KEY_RIGHT:
+      if (floor1.gameMatrix[posY][posX + 1] == '.') {
+        posX += 1;
+      }
+      break;
+    case KEY_UP:
+      if (floor1.gameMatrix[posY - 1][posX] == '.') {
+        posY -= 1;
+      }
+      break;
+    case KEY_DOWN:
+      if (floor1.gameMatrix[posY + 1][posX] == '.') {
+        posY += 1;
+      }
+      break;
+    }
+    floor1.renderMap();
+    mvwaddch(gamespace, posY, posX, '@');
+    mvwprintw(footer, 3, 30, "X: %d , Y: %d ", posX, posY);
+    wrefresh(footer);
+    wrefresh(gamespace);
+  }
+  curs_set(1);
   endwin();
   return 0;
 }
@@ -133,10 +276,10 @@ void print_menu(WINDOW *menu_win, int highlight) {
     if (highlight == i + 1) /* High light the present choice */
     {
       wattron(menu_win, A_REVERSE);
-      mvwprintw(menu_win, y, x, "%s", choices[i]);
+      mvwprintw(menu_win, y, x, "%s", choices[i].c_str());
       wattroff(menu_win, A_REVERSE);
     } else
-      mvwprintw(menu_win, y, x, "%s", choices[i]);
+      mvwprintw(menu_win, y, x, "%s", choices[i].c_str());
     ++y;
   }
   wrefresh(menu_win);
@@ -152,10 +295,10 @@ void print_right_menu(WINDOW *menu_win, int highlight) {
     if (highlight == i + 1) /* High light the present choice */
     {
       wattron(menu_win, A_REVERSE);
-      mvwprintw(menu_win, y, x, "%s", choices_right[i]);
+      mvwprintw(menu_win, y, x, "%s", choices_right[i].c_str());
       wattroff(menu_win, A_REVERSE);
     } else
-      mvwprintw(menu_win, y, x, "%s", choices_right[i]);
+      mvwprintw(menu_win, y, x, "%s", choices_right[i].c_str());
     ++y;
   }
   wrefresh(menu_win);
