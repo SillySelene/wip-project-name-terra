@@ -1,7 +1,11 @@
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <map>
 #include <ncurses.h>
 #include <unistd.h>
+#include <uuid/uuid.h>
+#include <vector>
 
 using namespace std;
 
@@ -11,8 +15,22 @@ using namespace std;
 #define MAP_WIDTH 79
 #define MAP_HEIGHT 29
 
+const int MONSTERSAMOUNT = 5;
+
 int startx = 0;
 int starty = 0;
+
+map<string, map<string, int>> mobLocationList;
+vector<string> listUUID;
+
+map<string, string> monsters[MONSTERSAMOUNT] = {
+    {{"name", "Vampire Bat"}, {"sprite", "V"}},
+    {{"name", "Raskghar"}, {"sprite", "G"}},
+    {{"name", "Living Armor"}, {"sprite", "5"}},
+    {{"name", "Ogre"}, {"sprite", "O"}},
+    {{"name", "Troll"}, {"sprite", "8"}},
+
+};
 
 string choices[7] = {
     "Inventory",  "Stats/Attributes", "Beastiary", "Diety",
@@ -45,7 +63,6 @@ public:
    * TODO: INIT METHOD
    * TODO: MODIFY MAP METHODS
    * TODO: GENERATE MAP METHOD
-   * TODO:
    */
 
   void renderMap() {
@@ -81,9 +98,26 @@ public:
   }
 };
 
+string makeUUID() {
+  while (true) {
+    int isValid = 1;
+    int testUUID = rand();
+    int i;
+    for (i = 0; i < listUUID.size(); i++) {
+      if (std::to_string(testUUID) == listUUID.at(i)) {
+        isValid = 0;
+      }
+    }
+    if (isValid == 1) {
+      listUUID.push_back(std::to_string(testUUID));
+      return std::to_string(testUUID);
+    }
+  }
+}
+
 class Entity {
 public:
-  string name;
+  map<string, string> name;
   int constitution;
   int dexterity;
   int strength;
@@ -93,8 +127,11 @@ public:
   int level;
   int healthMax;
   int health;
+  int xPos;
+  int yPos;
+  string UUID;
 
-  int maxHealth() { return constitution * 1 + (strength / 2); }
+  int maxHealth() { return constitution * 2 + (strength / 2); }
   void takeDamage(int dmgAmount) {
     health -= dmgAmount;
     if (health <= -1) {
@@ -107,8 +144,43 @@ public:
      */
   }
 
-  Entity(string myName, int con, int dex, int str, int intel, int wis, int per,
-         int lvl, int startingX, int startingY) {
+  void moveTowards(int y, int x) {
+    /*
+     * TODO: make this function
+     */
+    if (posX > x) {
+      /* move */
+    }
+  }
+  /* Calculator Damage */
+  int calcDamage() { return strength * 2 + (constitution / 2); }
+
+  void turn(Entity player) {
+    int i, j;
+    for (i = -1; i < 3; i++) {
+      for (j = -1; j < 3; j++) {
+        if (xPos == posX && yPos == posY) {
+          /* Player takes damage */
+          player.takeDamage(calcDamage());
+        }
+      }
+    }
+
+    /* check for any players nearby, then move to them */
+
+    int visRange = (int)(perception / 2.0) + 3;
+
+    for (i = visRange * -1; j < visRange; i++) {
+      for (j = visRange * -1; j < visRange; j++) {
+        if (xPos + j == posX && yPos + i == yPos) {
+          moveTowards(posY, posX);
+        }
+      }
+    }
+  }
+
+  Entity(map<string, string> myName, int con, int dex, int str, int intel,
+         int wis, int per, int lvl, int startingX, int startingY) {
     name = myName;
     constitution = con;
     dexterity = dex;
@@ -119,6 +191,16 @@ public:
     level = lvl;
     healthMax = maxHealth();
     health = healthMax;
+    UUID = makeUUID();
+
+    /* string, map<string, int> */
+
+    yPos = startingY;
+    xPos = startingX;
+    if (name.at("name").compare("player") != 0) {
+      mobLocationList[UUID]["x"] = xPos;
+      mobLocationList[UUID]["y"] = yPos;
+    }
   }
 };
 
@@ -132,6 +214,39 @@ WINDOW *create_newwin(int height, int width, int starty, int startx) {
   wrefresh(local_win);  /* Show that box 		*/
 
   return local_win;
+}
+
+map<string, string> playerData = {{"name", "player"}, {"sprite", "@"}};
+Entity player(playerData, 3, 3, 3, 3, 3, 3, 1, posX, posY);
+
+Entity initMonster(int floorNum, int y, int x) {
+
+  int rmons = rand() % MONSTERSAMOUNT;
+  map<string, string> monster = monsters[0];
+
+  int lvl = rand() % (floorNum * 3) + 1;
+
+  int con = rand() % (lvl * 2) + 1;
+  int dex = rand() % (lvl * 2) + 1;
+  int str = rand() % (lvl * 2) + 1;
+  int intel = rand() % (lvl * 2) + 1;
+  int wis = rand() % (lvl * 2) + 1;
+  int per = rand() % (lvl * 2) + 1;
+
+  Entity localMonster(monster, con, dex, str, intel, wis, per, lvl, y, x);
+
+  return localMonster;
+};
+
+int checkLocation(int y, int x) {
+  int i;
+  for (i = 1; i < listUUID.size(); i++) {
+    if (x == mobLocationList.at(listUUID[i]).at("x") &&
+        y == mobLocationList.at(listUUID[i]).at("y")) {
+      return 0;
+    }
+  }
+  return 1;
 }
 
 void sidebar() {
@@ -153,17 +268,19 @@ void sidebar() {
     c = wgetch(menu_win);
     switch (c) {
     case KEY_UP:
-      if (highlight == 1)
+      if (highlight == 1) {
         highlight = n_choices;
-      else
+      } else {
         --highlight;
+      }
       break;
     case KEY_DOWN:
-      if (highlight == n_choices)
+      if (highlight == n_choices) {
         highlight = 1;
-      else
+      } else {
         ++highlight;
-      break;
+        break;
+      }
     case 10:
       choice = highlight;
       break;
@@ -193,6 +310,8 @@ int main() {
   cbreak(); /* Line buffering disabled. pass on everything */
   keypad(stdscr, TRUE);
   curs_set(0);
+
+  srand(time(0));
 
   WINDOW *sidebar = newwin(SIDEBAR_HEIGHT, SIDEBAR_WIDTH, starty, startx);
   refresh();
@@ -227,7 +346,9 @@ int main() {
 
   keypad(gamespace, TRUE);
 
-  while (continueGame == 1) {
+  Entity myMonster = initMonster(1, 5, 5);
+
+  while (continueGame == 1 && player.health > 0) {
     int ch = wgetch(gamespace);
     floor1.renderMap();
     switch (ch) {
@@ -235,32 +356,95 @@ int main() {
       continueGame = 0;
       break;
     case KEY_LEFT:
-      if (floor1.gameMatrix[posY][posX - 1] == '.') {
+      if (floor1.gameMatrix[posY][posX - 1] == '.' &&
+          checkLocation(posY, posX - 1) == 1) {
         posX -= 1;
       }
       break;
     case KEY_RIGHT:
-      if (floor1.gameMatrix[posY][posX + 1] == '.') {
+      if (floor1.gameMatrix[posY][posX + 1] == '.' &&
+          checkLocation(posY, posX + 1) == 1) {
         posX += 1;
       }
       break;
     case KEY_UP:
-      if (floor1.gameMatrix[posY - 1][posX] == '.') {
+      if (floor1.gameMatrix[posY - 1][posX] == '.' &&
+          checkLocation(posY - 1, posX) == 1) {
         posY -= 1;
       }
       break;
     case KEY_DOWN:
-      if (floor1.gameMatrix[posY + 1][posX] == '.') {
+      if (floor1.gameMatrix[posY + 1][posX] == '.' &&
+          checkLocation(posY + 1, posX) == 1) {
         posY += 1;
+      }
+      break;
+    case ' ':
+      mvwaddch(footer, 3, 5, '8');
+      break;
+    case '1':
+      if (floor1.gameMatrix[posY + 1][posX - 1] == '.' &&
+          checkLocation(posY + 1, posX - 1) == 1) {
+        posX--;
+        posY++;
+      }
+      break;
+    case '2':
+      if (floor1.gameMatrix[posY + 1][posX] == '.' &&
+          checkLocation(posY + 1, posX) == 1) {
+        posY++;
+      }
+      break;
+    case '3':
+      if (floor1.gameMatrix[posY + 1][posX + 1] == '.' &&
+          checkLocation(posY + 1, posX + 1) == 1) {
+        posX++;
+        posY++;
+      }
+      break;
+    case '4':
+      if (floor1.gameMatrix[posY][posX - 1] == '.' &&
+          checkLocation(posY, posX - 1) == 1) {
+        posX--;
+      }
+      break;
+    case '5':
+      break;
+    case '6':
+      if (floor1.gameMatrix[posY][posX + 1] == '.' &&
+          checkLocation(posY, posX + 1) == 1) {
+        posX++;
+      }
+      break;
+    case '7':
+      if (floor1.gameMatrix[posY - 1][posX - 1] == '.' &&
+          checkLocation(posY - 1, posX - 1) == 1) {
+        posX--;
+        posY--;
+      }
+      break;
+    case '8':
+      if (floor1.gameMatrix[posY - 1][posX] == '.' &&
+          checkLocation(posY - 1, posX) == 1) {
+        posY--;
+      }
+      break;
+    case '9':
+      if (floor1.gameMatrix[posY - 1][posX + 1] == '.' &&
+          checkLocation(posY - 1, posX + 1) == 1) {
+        posX++;
+        posY--;
       }
       break;
     }
     floor1.renderMap();
-    mvwaddch(gamespace, posY, posX, '@');
-    mvwprintw(footer, 3, 30, "X: %d , Y: %d ", posX, posY);
+    mvwaddch(gamespace, posY, posX, player.name["sprite"].c_str()[0]);
+    mvwaddch(gamespace, myMonster.yPos, myMonster.xPos,
+             myMonster.name["sprite"].c_str()[0]);
     wrefresh(footer);
     wrefresh(gamespace);
   }
+
   curs_set(1);
   endwin();
   return 0;
