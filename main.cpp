@@ -15,7 +15,7 @@ using namespace std;
 #define MAP_WIDTH 79
 #define MAP_HEIGHT 29
 
-const int MONSTERSAMOUNT = 5;
+const int MONSTERSAMOUNT = 7;
 
 int startx = 0;
 int starty = 0;
@@ -29,17 +29,16 @@ map<string, string> monsters[MONSTERSAMOUNT] = {
     {{"name", "Living Armor"}, {"sprite", "5"}},
     {{"name", "Ogre"}, {"sprite", "O"}},
     {{"name", "Troll"}, {"sprite", "8"}},
+    {{"name", "Declan"}, {"sprite", "v"}},
+    {{"name", "Selene"}, {"sprite", "܊"}}};
 
-};
-
-string choices[7] = {
+vector<string> choices = {
     "Inventory",  "Stats/Attributes", "Beastiary", "Diety",
     "Your Story", "Quest Book",       "Exit",
-
 };
 
-string choices_right[5] = {"Fight", "Defend", "Magic", "Quick-Potion 1",
-                           "Quick-Potion 2"};
+vector<string> choices_right = {"Fight", "Defend", "Magic", "Quick-Potion 1",
+                                "Quick-Potion 2"};
 
 int posX = 40;
 int posY = 15;
@@ -48,6 +47,7 @@ int n_choices = 7;
 int n_choices_right = 5;
 void print_menu(WINDOW *menu_win, int highlight);
 void print_right_menu(WINDOW *menu_win, int highlight);
+vector<map<string, int>> spawnableLocations = {};
 
 WINDOW *gamespace;
 
@@ -58,6 +58,7 @@ public:
   int gameWindowHeight;
   int floorNum;
   char gameMatrix[MAP_HEIGHT][MAP_WIDTH];
+  int failChance = 50;
   /*
    * TODO: RENDER MAP METHOD
    * TODO: INIT METHOD
@@ -67,7 +68,7 @@ public:
 
   void renderMap() {
     int y, x;
-    for (y = 1; y < 29; y++) {
+    for (y = 1; y < MAP_HEIGHT; y++) {
       for (x = 1; x < 79; x++) {
         mvwaddch(gamespace, y, x, gameMatrix[y][x]);
         /* mvwaddch(gameWindow, y, x, gameMatrix[y][x]); */
@@ -75,17 +76,82 @@ public:
       }
     }
   }
-  void generateMap() {
-    int y, x;
-    for (y = 1; y < MAP_HEIGHT; y++) {
-      for (x = 1; x < MAP_WIDTH; x++) {
-        if ((y == 1 || y == MAP_HEIGHT - 1) || (x == 1 || x == MAP_WIDTH - 1)) {
-          gameMatrix[y][x] = '#';
+
+  void generateRoom(int width, int height, int y, int x) {
+    int i, j;
+    int hasEntrance = 0;
+    for (i = 1; i < height; i++) {
+      for (j = 1; j < width; j++) {
+        if (i == 1 || j == 1 || i == height - 2 || j == width - 1) {
+          gameMatrix[i + y][j + x] = '#';
         } else {
-          gameMatrix[y][x] = '.';
+          gameMatrix[i + y][j + x] = '.';
         }
       }
+      if (i + y != 0 && i + y != MAP_HEIGHT && j + x != 0 &&
+          j + x != MAP_WIDTH && hasEntrance == 0) {
+        gameMatrix[i + y][j + x] = '.';
+        hasEntrance = 1;
+      }
     }
+  }
+
+  void generateSlices(int width, int height, int TLY, int TLX) {
+    int sliceDir = rand() % 2;
+    vector<map<string, int>> slice = {};
+
+    if (sliceDir == 0) {
+      int sliceOrd = rand() % 2;
+      /* horizontal */
+      int sliceLoc = rand() % height;
+      if (sliceLoc < height) {
+        slice = {{{"width", width},
+                  {"height", height},
+                  {"y", sliceOrd == 0 ? TLY : TLY + (height - sliceLoc)},
+                  {"x", TLX}},
+                 {{"width", width},
+                  {"height", height - sliceLoc},
+                  {"y", sliceOrd == 1 ? TLY : (TLY + (height - sliceLoc))}}};
+      }
+    } else {
+      /* vertical */
+      int sliceOrd = rand() % 2;
+      int sliceLoc = rand() % width;
+      if (sliceLoc < width) {
+        slice = {{{"width", width},
+                  {"height", height},
+                  {"y", sliceOrd == 0 ? TLY : TLY + (width - sliceLoc)},
+                  {"x", TLX}},
+                 {{"width", width - sliceLoc},
+                  {"height", height},
+                  {"y", sliceOrd == 1 ? TLY : (TLY + (width - sliceLoc))}}};
+      }
+    }
+
+    int i;
+    for (i = 0; i < slice.size(); i++) {
+      int sliceChance = rand() % 100;
+      if (sliceChance > failChance) {
+        generateSlices(slice[i]["width"], slice[i]["height"], slice[i]["y"],
+                       slice[i]["x"]);
+        failChance += 1;
+      } else {
+        generateRoom(slice[i]["width"], slice[i]["height"], slice[i]["y"],
+                     slice[i]["x"]);
+      }
+    }
+  }
+
+  void generateMap() {
+    int y, x;
+
+    for (y = 1; y < MAP_HEIGHT; y++) {
+      for (x = 1; x < MAP_WIDTH; x++) {
+        gameMatrix[y][x] = '#';
+      }
+    }
+
+    generateSlices(MAP_WIDTH, MAP_HEIGHT, 0, 0);
   }
 
   Floor(WINDOW *gameW, int gameWL, int gameWH, int floorN) {
@@ -222,7 +288,7 @@ Entity player(playerData, 3, 3, 3, 3, 3, 3, 1, posX, posY);
 Entity initMonster(int floorNum, int y, int x) {
 
   int rmons = rand() % MONSTERSAMOUNT;
-  map<string, string> monster = monsters[0];
+  map<string, string> monster = monsters[rmons];
 
   int lvl = rand() % (floorNum * 3) + 1;
 
@@ -247,54 +313,6 @@ int checkLocation(int y, int x) {
     }
   }
   return 1;
-}
-
-void sidebar() {
-  WINDOW *menu_win;
-  int highlight = 1;
-  int choice = 0;
-  int c;
-
-  startx = 0;
-  starty = 1;
-
-  menu_win = newwin(SIDEBAR_HEIGHT, SIDEBAR_WIDTH, starty, startx);
-  keypad(menu_win, TRUE);
-  mvprintw(0, 0,
-           "Use arrow keys to go up and down, Press enter to select a choice");
-  refresh();
-  print_menu(menu_win, highlight);
-  while (1) {
-    c = wgetch(menu_win);
-    switch (c) {
-    case KEY_UP:
-      if (highlight == 1) {
-        highlight = n_choices;
-      } else {
-        --highlight;
-      }
-      break;
-    case KEY_DOWN:
-      if (highlight == n_choices) {
-        highlight = 1;
-      } else {
-        ++highlight;
-        break;
-      }
-    case 10:
-      choice = highlight;
-      break;
-    default:
-      mvprintw(24, 0,
-               "Charcter pressed is = %3d Hopefully it can be printed as '%c'",
-               c, c);
-      refresh();
-      break;
-    }
-    print_menu(menu_win, highlight);
-    if (choice != 0) /* User did a choice come out of the infinite loop */
-      break;
-  }
 }
 
 int centerText(int windowLength, char inputString[]) {
@@ -346,7 +364,10 @@ int main() {
 
   keypad(gamespace, TRUE);
 
-  Entity myMonster = initMonster(1, 5, 5);
+  Entity myMonster = initMonster(1, 9, 10);
+  Entity myMonster1 = initMonster(1, 10, 10);
+  Entity myMonster2 = initMonster(1, 11, 10);
+  Entity myMonster3 = initMonster(1, 12, 10);
 
   while (continueGame == 1 && player.health > 0) {
     int ch = wgetch(gamespace);
@@ -441,6 +462,12 @@ int main() {
     mvwaddch(gamespace, posY, posX, player.name["sprite"].c_str()[0]);
     mvwaddch(gamespace, myMonster.yPos, myMonster.xPos,
              myMonster.name["sprite"].c_str()[0]);
+    mvwaddch(gamespace, myMonster1.yPos, myMonster1.xPos,
+             myMonster1.name["sprite"].c_str()[0]);
+    mvwaddch(gamespace, myMonster2.yPos, myMonster2.xPos,
+             myMonster2.name["sprite"].c_str()[0]);
+    mvwaddch(gamespace, myMonster3.yPos, myMonster3.xPos,
+             myMonster3.name["sprite"].c_str()[0]);
     wrefresh(footer);
     wrefresh(gamespace);
   }

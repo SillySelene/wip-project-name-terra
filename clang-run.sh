@@ -1,3 +1,3 @@
-g++ $1 -lncurses
-./a.out
-rm ./a.out
+g++ $1 -lncurses -o main.out
+./main.out
+rm ./main.out
